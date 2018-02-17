@@ -228,124 +228,6 @@ class NeuralNet(object):
         return predicted, round((m - incorrect) / m, 4) * 100
 
 
-class KNN(object):
-    def __init__(self, k=7):
-        self.k = k
-
-    def train(self, X_train, y_train):
-        self.X_train, self.y_train = X_train, y_train
-
-    def test(self, X_test, y_test):
-        correct = 0
-        pred = []
-        for X_ins, y_ins in zip(X_test, y_test):
-            predict = self.predict(X_ins)
-            pred.append(predict)
-            if y_ins == predict:
-                correct += 1
-        return pred, round(correct/len(X_test), 4) * 100
-
-    def predict(self, p):
-        class_count = Counter(self.nearest_neighbours(p))
-        return class_count.most_common()[0][0]
-
-    def nearest_neighbours(self, p):
-        distances = norm(self.X_train - p, axis=1)
-        neighbors = zip(distances, self.y_train)
-        k_nearest = nsmallest(self.k, neighbors, key=lambda x: x[0])
-        return map(lambda x: x[1], k_nearest)
-
-# k: number of decision stumps
-class AdaBoost(object):
-    def __init__(self, k = 500):
-        self. k = k
-
-    def train(self, X_train, y_train, variables):
-        possible_pairs = get_possible_pairs()
-        y_unique = list(set(y_train))
-        vote_classifier = {}
-        weights = np.array([float(1)/float(len(y_train))]*len(y_train))
-        for variable in variables:
-            error = 0
-            index1 = variable[0]
-            index2 = variable[1]
-            decision_stump = []
-            decision_stump_category = {'Positive':{},'Negative':{}}
-            #y_category = {}
-            #count_y_category = 0
-            for i in xrange(0, len(X_train)):
-                if X_train[i][index1] >= X_train[i][index2]:
-                    decision_stump.append('Positive')
-                    try:
-                        decision_stump_category['Positive'][y_train[i]] += 1
-                    except:
-                        decision_stump_category['Positive'][y_train[i]] = 1
-                        #y_category[y_train[i]] = count_y_category
-                        #count_y_category += 1
-                else:
-                    decision_stump.append('Negative')
-                    try:
-                        decision_stump_category['Negative'][y_train[i]] += 1
-                    except:
-                        decision_stump_category['Negative'][y_train[i]] = 1
-                        #y_category[y_train[i]] = count_y_category
-                        #count_y_category += 1
-
-
-            Positive_Class = max(decision_stump_category['Positive'], key=lambda k: decision_stump_category['Positive'][k])
-            Negative_Class = max(decision_stump_category['Negative'], key=lambda k: decision_stump_category['Negative'][k])
-            decision_stump_classification = []
-            for i in xrange(0, len(y_train)):
-                if decision_stump[i] == 'Positive':
-                    decision_stump_classification.append(Positive_Class)
-                else:
-                    decision_stump_classification.append(Negative_Class)
-                if decision_stump_classification[i] != y_train[i]:
-                    error = error + weights[i]
-
-            if error > 0.5:
-                continue
-
-            for i in xrange(0, len(y_train)):
-                if decision_stump_classification[i] == y_train[i]:
-                    weights[i] = weights[i]*error/(1.0-error)
-
-            #Normalizing weights
-            sum_weights = sum(weights)
-            weights = weights / sum_weights
-            vote_classifier[variable] = {}
-            vote_classifier[variable]['weight'] = math.log((1-error) / error)
-            vote_classifier[variable]['Positive_Class'] = Positive_Class
-            vote_classifier[variable]['Negative_Class'] = Negative_Class
-
-        return vote_classifier, y_unique
-
-    def test(self, X_test, y_test, vote_classifier, y_unique):
-        possible_pairs = get_possible_pairs()
-        y_unique_dict = {}
-        y_unique_dict[y_unique[0]] = 1
-        y_unique_dict[y_unique[1]] = -1
-        classification = [0] * len(y_test)
-        classifiers = vote_classifier
-        for classifier in classifiers:
-            index1 = classifier[0]
-            index2 = classifier[1]
-            for i in list(range(0,len(y_test))):
-                if X_test[i][index1] >= X_test[i][index2]:
-                    vote = classifiers[classifier]['Positive_Class']
-                    classification[i] = classification[i] + y_unique_dict[vote]*classifiers[classifier]['weight']
-                else:
-                    vote = classifiers[classifier]['Negative_Class']
-                    classification[i] = classification[i] + y_unique_dict[vote]*classifiers[classifier]['weight']
-        classification_category = []
-        for i in xrange(0, len(y_test)):
-            if classification[i] >= 0:
-                classification_category.append(y_unique[0])
-            else:
-                classification_category.append(y_unique[1])
-        return classification_category
-
-
 def read_file(fname, shuffle_data=True):
     print "Reading data from", fname, "..."
     image = np.loadtxt(fname, usecols=0, dtype=str)  # .reshape(len(X), 1)
@@ -361,20 +243,12 @@ def read_file(fname, shuffle_data=True):
 
     return list(image), X/255, y
 
+
 def transform_Y_for_NN(Y):
     lb = LabelBinarizer()
     lb.fit(Y)
     return lb
 
-def get_possible_pairs():
-    global n_features
-    possible_pairs = []
-    for x in xrange(n_features):
-        for y in xrange(x, n_features):
-            if x==y:
-                continue
-            possible_pairs.append((x,y))
-    return possible_pairs
 
 def to_file(image, pred):
     f = open('output.txt', 'w')
