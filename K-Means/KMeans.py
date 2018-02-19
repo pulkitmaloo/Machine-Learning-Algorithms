@@ -2,6 +2,7 @@
 """
 @author: Pulkit Maloo
 """
+
 import os
 import time
 import pandas as pd
@@ -9,7 +10,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 
-SEED = np.random.randint(0, 1000)
+SEED = np.random.randint(1024)
 
 
 def load_data(fname="test.csv"):
@@ -62,8 +63,9 @@ def distance_(data, centroids):
     dist = np.sum((data[:, np.newaxis, :] - centroids)**2, axis=2)
     return dist
 
+
 #https://github.com/SheliaXin/Scalable-K-means-/blob/master/Final%20Project_Scalable%20K-Means%2B%2B.ipynb
-def ScalableKMeansPlusPlus(data, k, l, iter_=2):
+def ScalableKMeansPlusPlus(data, k, l, iter_=5):
 
     """ Apply the KMeans|| clustering algorithm
 
@@ -91,16 +93,17 @@ def ScalableKMeansPlusPlus(data, k, l, iter_=2):
         sample_new = data[np.random.choice(range(len(p)), l, p=p), :]
         centroids = np.r_[centroids, sample_new]
 
-    ## reduce k*l to k using KMeans++
+    # reduce k*l to k using KMeans++
     dist = distance_(data, centroids)
     weights = get_weight(dist, centroids)
 
-    return centroids[np.random.choice(len(weights), k, replace=False, p=weights), :]
+    return centroids[np.random.choice(len(weights), k, replace=False,
+                                      p=weights), :]
 
 
 class KMeans(object):
     def __init__(self, k, algo="elkan", metric="euclidean", init="kmeans++",
-                 max_iter=100, random_state=SEED):
+                 max_iter=50, random_state=SEED):
         self.k = k
         self.init = init
         self.algo = algo
@@ -122,11 +125,9 @@ class KMeans(object):
         return res
 
     def kpp(self, X, k):
+        return ScalableKMeansPlusPlus(X, k, 1+k//10)
         mu = self.get_init_centroids(X, 1, "random")
         while len(mu) < k:
-
-#            D2 = np.array([min([np.linalg.norm(x-c)**2 for c in mu])
-#                           for x in X])
             D2 = np.min(cdist(X, mu)**2, axis=1)
             probs = D2/D2.sum()
             idx_possible = np.where(probs >= np.random.random())[0]
@@ -136,7 +137,6 @@ class KMeans(object):
             idx = self.get_init_centroids(idx_possible, 1, "random")[0][0]
             mu = np.append(mu, np.array([X[idx]]), axis=0)
         return mu
-#        return ScalableKMeansPlusPlus(X, k, 4)
 
     def get_init_centroids(self, X, k, init="kmeans++"):
         if init == "random":
@@ -256,83 +256,57 @@ class KMeans(object):
             # Step 1
             centroid_dist = cdist(centroids, centroids, self.metric)
             self.dist_calc += centroids.shape[0] ** 2
-            centroid_dist_nan = np.copy(centroid_dist)
-            np.fill_diagonal(centroid_dist_nan, np.nan)
-            s_c = np.nanmin(centroid_dist_nan, axis=0) / 2
+#            centroid_dist_nan = np.copy(centroid_dist)
+#            np.fill_diagonal(centroid_dist_nan, np.nan)
+#            s_c = np.nanmin(centroid_dist_nan, axis=0) / 2
 
             # Step 2
-            step2_idx = np.nonzero(np.array([upper[i] <= s_c[clusters[i]]
-                                             for i in range(X.shape[0])]))[0]
+#            step2_idx = np.nonzero(np.array([upper[i] <= s_c[clusters[i]]
+#                                             for i in range(X.shape[0])]))[0]
 
             # Step 3
-
             for c in range(self.k):
+                # To-Do -> filter rows on each step
+                cond1 = clusters != c
+                cond2 = upper > lower[:, c].reshape(lower.shape[0], 1)
+                cond3 = upper > centroid_dist[clusters, c]/2
+                cond_and = np.logical_and(np.logical_and(cond1, cond2), cond3)
+                step3_idx_1 = np.where(cond_and)[0]
+                if not step3_idx_1.size > 0:
+                    continue
 
-# ========== Vectorized =======================================================
-#                cond1 = clusters != c
-#                cond2 = upper > lower[:, c].reshape(lower.shape[0], 1)
-#                cond3 = upper > centroid_dist[clusters, c]/2
-#                step3_idx = np.nonzero(np.logical_and(np.logical_and(cond1, cond2), cond3))[0]
-#                print("a1\n", step3_idx)
-#
-#                upper[step3_idx, :] = distance(X[step3_idx, :],
-#                                             centroids[clusters[step3_idx, :]],
-#                                             self.metric)
-#                self.dist_calc += step3_idx.shape[0]
-#
-#                cond3b_1 = upper > lower[:, c].reshape(lower.shape[0], 1)
-#                print(cond3b_1.reshape(-1))
-#                cond3b_2 = upper > centroid_dist[clusters, c]/2
-#                print(cond3b_2.reshape(-1))
-#                idx_3b = np.nonzero(np.logical_or(cond3b_1, cond3b_2))[0]
-#
-#                print(idx_3b)
-#                step3_idx = np.intersect1d(step3_idx, idx_3b,
-#                                           assume_unique=True)
-#                print("a2\n", step3_idx)
-#
-#                lower[step3_idx, c] = distance(X[step3_idx, :], centroids[c],
-#                                               self.metric)
-#
-#                idx_3b_1 = np.nonzero(upper > lower[:, c].reshape(lower.shape[0], 1))[0]
-#                step3_idx = np.intersect1d(step3_idx, idx_3b_1,
-#                                           assume_unique=True)
-#                print("a3\n", step3_idx)
-#
-#                clusters[step3_idx] = c
-#                upper[step3_idx] = lower[step3_idx, c].reshape(step3_idx.shape[0], 1)
-# =============================================================================
+                upper[step3_idx_1] = distance(X[step3_idx_1, :],
+                         centroids[clusters[step3_idx_1].reshape(-1)],
+                         self.metric, axis=1).reshape(step3_idx_1.shape[0], 1)
+                self.dist_calc += step3_idx_1.shape[0]
 
+                cond3b_1 = upper > lower[:, c].reshape(lower.shape[0], 1)
+                cond3b_2 = upper > centroid_dist[clusters, c]/2
+                idx_3b = np.where(np.logical_or(cond3b_1, cond3b_2))[0]
+                step3_idx_2 = np.intersect1d(step3_idx_1, idx_3b,
+                                             assume_unique=True)
+                if not step3_idx_2.size > 0:
+                    continue
 
-# =============================================================================
-                for i in range(X.shape[0]):
-                    if i in step2_idx:
-                        continue
-                    if (c != clusters[i] and upper[i] > lower[i, c] and
-                        upper[i] > centroid_dist[clusters[i], c]/2):
-                        # 3(a) skipping check for r(x)
-                        upper[i] = distance(X[i], centroids[clusters[i]],
-                                            self.metric)
-                        self.dist_calc += 1
-                        # 3(b)
-                        if (upper[i] > lower[i, c] or
-                           upper[i] > centroid_dist[clusters[i], c] / 2):
-                            lower[i, c] = distance(X[i], centroids[c],
-                                                   self.metric)
-                            self.dist_calc += 1
-                            if lower[i, c] < upper[i]:
-                                clusters[i] = c
-                                upper[i] = lower[i, c]
-# =============================================================================
-                                # already doing in 3a?
-#                                upper[i] = distance(X[i], centroids[c],
-#                                                    self.metric)
+                lower[step3_idx_2, c] = distance(X[step3_idx_2], centroids[c],
+                                                 self.metric, axis=1)
+                self.dist_calc += step3_idx_2.shape[0]
+
+                idx_3b_1 = np.where(upper > lower[:, c].reshape(lower.shape[0],
+                                                                1))[0]
+                step3_idx_3 = np.intersect1d(step3_idx_2, idx_3b_1,
+                                             assume_unique=True)
+                if not step3_idx_3.size > 0:
+                    continue
+
+                clusters[step3_idx_3] = c
+                upper[step3_idx_3] = lower[step3_idx_3, c].reshape(
+                                                    step3_idx_3.shape[0], 1)
 
             # Step 4
             new_centroids = self.recompute_centroids(X, clusters)
             newcentroid_dist = distance(new_centroids, centroids, self.metric,
                                         axis=1)
-#            newcentroid_dist = cdist(new_centroids, centroids, self.metric)
             self.dist_calc += self.k
 
             # Step 5
@@ -401,8 +375,8 @@ class KMeans(object):
 
     def score(self, labels):
         clf_df = pd.DataFrame({"Class": labels, "Predict": self.labels_})
-        clf_cnt = clf_df.groupby(list(clf_df.columns)).size().reset_index(name='count')
-        print(clf_cnt)
+        clf_cnt = clf_df.groupby(list(clf_df.columns)[::-1]).size().reset_index(name='count')
+#        print(clf_cnt)
         correct_predict = sum(clf_cnt.groupby(["Predict"], sort=False)["count"].max())
 
         print("Accuracy =", round(100*correct_predict/X.shape[0], 2), "%")
@@ -410,7 +384,7 @@ class KMeans(object):
 
 def check_models(model1, model2):
     if not (np.array_equal(model1.cluster_centers_, model2.cluster_centers_) or
-       np.array_equal(model1.labels_, model2.labels_) or
+       np.allclose(model1.labels_, model2.labels_) or
        model1.iterations == model2.iterations):
         raise ValueError("Find the bug")
 
@@ -418,15 +392,21 @@ def check_models(model1, model2):
 if __name__ == '__main__':
     X, labels = load_data("iris.csv")
     n_clusters = 3
-
-    lloyd_kmeans = KMeans(k=n_clusters, algo="lloyd")
+    init = "kmeans++"
+    lloyd_kmeans = KMeans(k=n_clusters, algo="lloyd", init=init)
     lloyd_kmeans.fit(X)
 
-    elkan_kmeans = KMeans(k=n_clusters, algo="elkan")
+    elkan_kmeans = KMeans(k=n_clusters, algo="elkan", init=init)
     elkan_kmeans.fit(X)
 
 #    print("Predicted\n", elkan_kmeans.labels_)
 #    print("Class\n", labels)
     elkan_kmeans.score(labels)
+    speedup = lloyd_kmeans.dist_calc/elkan_kmeans.dist_calc
 
-    check_models(elkan_kmeans, lloyd_kmeans)  # remove this
+    print("\nk =", n_clusters)
+    print("iterations\t", elkan_kmeans.iterations)
+    print("standard  \t", lloyd_kmeans.dist_calc)
+    print("fast      \t", elkan_kmeans.dist_calc)
+    print("speedup   \t", round(speedup, 2))
+#    check_models(elkan_kmeans, lloyd_kmeans)  # remove this
