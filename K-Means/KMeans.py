@@ -125,7 +125,10 @@ class KMeans(object):
         return res
 
     def kpp(self, X, k):
-        return ScalableKMeansPlusPlus(X, k, 1+k//10)
+        try:
+            return ScalableKMeansPlusPlus(X, k, 1+k//10)
+        except:
+            pass
         mu = self.get_init_centroids(X, 1, "random")
         while len(mu) < k:
             D2 = np.min(cdist(X, mu)**2, axis=1)
