@@ -8,18 +8,22 @@ import time
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
-
+from kmeans_utils import *
 
 SEED = np.random.randint(1024)
 
 
-def load_data(fname="test.csv"):
+def load_data(fname="test.csv", labels=True):
     """ returns numpy array of data and label col """
     fpath = os.path.join(os.getcwd(), "data", fname)
     df = pd.read_csv(fpath, header=None)
     df.columns = range(len(df.columns))
-    df.iloc[:, -1] = df.iloc[:, -1].astype("category").cat.codes
-    return df.iloc[:, :-1].values, df.iloc[:, -1].values
+    if labels:
+        df.iloc[:, -1] = df.iloc[:, -1].astype("category").cat.codes
+        return df.iloc[:, :-1].values, df.iloc[:, -1].values
+    else:
+        return np.array(df[[0]].applymap(lambda x: list(map(int, x.split()))
+                        )[[0]].values.tolist()).reshape(100000, 2)
 
 
 def distance3(p1, p2, p=2):
@@ -49,56 +53,6 @@ def distance(p1, p2, metric, axis=None):
         return 1 - (np.dot(p1, p2)/xy)
     else:
         raise ValueError
-
-
-def get_weight(dist, centroids):
-    min_dist = np.zeros(dist.shape)
-    min_dist[range(dist.shape[0]), np.argmin(dist, axis=1)] = 1
-    count = np.array([np.count_nonzero(min_dist[:, i])
-                      for i in range(centroids.shape[0])])
-    return count/np.sum(count)
-
-
-def distance_(data, centroids):
-    dist = np.sum((data[:, np.newaxis, :] - centroids)**2, axis=2)
-    return dist
-
-
-#https://github.com/SheliaXin/Scalable-K-means-/blob/master/Final%20Project_Scalable%20K-Means%2B%2B.ipynb
-def ScalableKMeansPlusPlus(data, k, l, iter_=5):
-
-    """ Apply the KMeans|| clustering algorithm
-
-    Parameters:
-      data     ndarrays data
-      k        number of cluster
-      l        number of point sampled in each iteration
-
-    Returns:   the final centroids finded by KMeans||
-
-    """
-    centroids = data[np.random.choice(range(data.shape[0]), 1), :]
-
-    for i in range(iter_):
-        # Get the distance between data and centroids
-        dist = distance_(data, centroids)
-
-        # Calculate the cost of data with respect to the centroids
-        norm_const = np.sum(np.min(dist, axis=1))
-
-        # Calculate the distribution for sampling l new centers
-        p = np.min(dist, axis=1)/norm_const
-
-        # Sample the l new centers and append them to the original ones
-        sample_new = data[np.random.choice(range(len(p)), l, p=p), :]
-        centroids = np.r_[centroids, sample_new]
-
-    # reduce k*l to k using KMeans++
-    dist = distance_(data, centroids)
-    weights = get_weight(dist, centroids)
-
-    return centroids[np.random.choice(len(weights), k, replace=False,
-                                      p=weights), :]
 
 
 class KMeans(object):
@@ -270,6 +224,7 @@ class KMeans(object):
             # Step 3
             for c in range(self.k):
                 # To-Do -> filter rows on each step
+                # convert upper and lower to masked arrays
                 cond1 = clusters != c
                 cond2 = upper > lower[:, c].reshape(lower.shape[0], 1)
                 cond3 = upper > centroid_dist[clusters, c]/2
@@ -283,11 +238,14 @@ class KMeans(object):
                          self.metric, axis=1).reshape(step3_idx_1.shape[0], 1)
                 self.dist_calc += step3_idx_1.shape[0]
 
-                cond3b_1 = upper > lower[:, c].reshape(lower.shape[0], 1)
-                cond3b_2 = upper > centroid_dist[clusters, c]/2
-                idx_3b = np.where(np.logical_or(cond3b_1, cond3b_2))[0]
-                step3_idx_2 = np.intersect1d(step3_idx_1, idx_3b,
-                                             assume_unique=True)
+                cond3b_1 = np.greater(upper, lower[:, c].reshape(X.shape[0], 1),
+                                      where=cond_and)
+                cond3b_2 = np.greater(upper, centroid_dist[clusters, c]/2,
+                                      where=cond_and)
+
+                cond_or = np.logical_or(cond3b_1, cond3b_2)
+                cond_and_or = np.logical_and(cond_and, cond_or)
+                step3_idx_2 = np.where(cond_and_or)[0]
                 if not step3_idx_2.size > 0:
                     continue
 
@@ -295,10 +253,9 @@ class KMeans(object):
                                                  self.metric, axis=1)
                 self.dist_calc += step3_idx_2.shape[0]
 
-                idx_3b_1 = np.where(upper > lower[:, c].reshape(lower.shape[0],
-                                                                1))[0]
-                step3_idx_3 = np.intersect1d(step3_idx_2, idx_3b_1,
-                                             assume_unique=True)
+                cond_f = np.greater(upper, lower[:, c].reshape(X.shape[0], 1),
+                                    where=cond_and_or)
+                step3_idx_3 = np.where(np.logical_and(cond_and_or, cond_f))[0]
                 if not step3_idx_3.size > 0:
                     continue
 
@@ -378,23 +335,25 @@ class KMeans(object):
 
     def score(self, labels):
         clf_df = pd.DataFrame({"Class": labels, "Predict": self.labels_})
-        clf_cnt = clf_df.groupby(list(clf_df.columns)[::-1]).size().reset_index(name='count')
+        clf_cnt = clf_df.groupby(list(clf_df.columns)[::-1]).size()
+        clf_cnt = clf_cnt.reset_index(name='count')
 #        print(clf_cnt)
-        correct_predict = sum(clf_cnt.groupby(["Predict"], sort=False)["count"].max())
+        correct_predict = sum(clf_cnt.groupby(["Predict"],
+                                              sort=False)["count"].max())
 
         print("Accuracy =", round(100*correct_predict/X.shape[0], 2), "%")
 
 
 def check_models(model1, model2):
-    if not (np.array_equal(model1.cluster_centers_, model2.cluster_centers_) or
+    if not (np.allclose(model1.cluster_centers_, model2.cluster_centers_) or
        np.allclose(model1.labels_, model2.labels_) or
        model1.iterations == model2.iterations):
         raise ValueError("Find the bug")
 
 
 if __name__ == '__main__':
-    X, labels = load_data("iris.csv")
-    n_clusters = 3
+    X = load_data("birch.txt", False)
+    n_clusters = 20
     init = "kmeans++"
     lloyd_kmeans = KMeans(k=n_clusters, algo="lloyd", init=init)
     lloyd_kmeans.fit(X)
@@ -404,7 +363,7 @@ if __name__ == '__main__':
 
 #    print("Predicted\n", elkan_kmeans.labels_)
 #    print("Class\n", labels)
-    elkan_kmeans.score(labels)
+#    elkan_kmeans.score(labels)
     speedup = lloyd_kmeans.dist_calc/elkan_kmeans.dist_calc
 
     print("\nk =", n_clusters)
@@ -412,4 +371,4 @@ if __name__ == '__main__':
     print("standard  \t", lloyd_kmeans.dist_calc)
     print("fast      \t", elkan_kmeans.dist_calc)
     print("speedup   \t", round(speedup, 2))
-#    check_models(elkan_kmeans, lloyd_kmeans)  # remove this
+    check_models(elkan_kmeans, lloyd_kmeans)  # remove this
