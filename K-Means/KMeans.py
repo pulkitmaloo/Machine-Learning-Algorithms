@@ -8,22 +8,22 @@ import time
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
-from kmeans_utils import *
 
 SEED = np.random.randint(1024)
 
 
 def load_data(fname="test.csv", labels=True):
-    """ returns numpy array of data and label col """
+    """ returns numpy ndarray of data and label col """
     fpath = os.path.join(os.getcwd(), "data", fname)
     df = pd.read_csv(fpath, header=None)
+#    print(df)
     df.columns = range(len(df.columns))
     if labels:
         df.iloc[:, -1] = df.iloc[:, -1].astype("category").cat.codes
         return df.iloc[:, :-1].values, df.iloc[:, -1].values
     else:
-        return np.array(df[[0]].applymap(lambda x: list(map(int, x.split()))
-                        )[[0]].values.tolist()).reshape(100000, 2)
+        return np.array(df[[0]].applymap(lambda x: list(map(int, x.split())))
+                        [[0]].values.tolist()).reshape(100000, 2)
 
 
 def distance3(p1, p2, p=2):
@@ -56,7 +56,7 @@ def distance(p1, p2, metric, axis=None):
 
 
 class KMeans(object):
-    def __init__(self, k, algo="elkan", metric="euclidean", init="kmeans++",
+    def __init__(self, k, algo="lloyd", metric="euclidean", init="kmeans++",
                  max_iter=50, random_state=SEED):
         self.k = k
         self.init = init
@@ -65,34 +65,29 @@ class KMeans(object):
         self.max_iter = max_iter
         self.dist_calc = 0
         self.random_state = random_state
-        np.random.seed(SEED)
+        np.random.seed(self.random_state)
+        self.metric_dict = {"euclidean": "euclidean", "cosine": "cosine",
+                            "cityblock": "cityblock",
+                            distance3: "distance3", distance4: "distance4"}
 
     def __repr__(self):
         res = "KMeans("
         res += "K=" + str(self.k)
-        res += ", algo=" + self.algo
-        res += ", metric=" + self.metric
+        res += ", algo=" + str(self.algo)
+        res += ", metric=" + str(self.metric_dict[self.metric])
         res += ", max_iter=" + str(self.max_iter)
-        res += ", init=" + self.init
+        res += ", init=" + str(self.init)
         res += ", random_state=" + str(self.random_state)
         res += ")"
         return res
 
     def kpp(self, X, k):
-        try:
-            return ScalableKMeansPlusPlus(X, k, 1+k//10)
-        except:
-            pass
-        mu = self.get_init_centroids(X, 1, "random")
+        mu = np.mean(X, axis=0).reshape(1, X.shape[1])
         while len(mu) < k:
-            D2 = np.min(cdist(X, mu)**2, axis=1)
+            D2 = np.min(cdist(X, mu)**2, axis=1).reshape(X.shape[0], 1)
             probs = D2/D2.sum()
-            idx_possible = np.where(probs >= np.random.random())[0]
-            if not (idx_possible.size > 0):
-                continue
-            idx_possible = idx_possible.reshape(idx_possible.shape[0], -1)
-            idx = self.get_init_centroids(idx_possible, 1, "random")[0][0]
-            mu = np.append(mu, np.array([X[idx]]), axis=0)
+            idx = np.argmax(probs)
+            mu = np.append(mu, [X[idx]], axis=0)
         return mu
 
     def get_init_centroids(self, X, k, init="kmeans++"):
@@ -114,16 +109,13 @@ class KMeans(object):
     def recompute_centroids(self, X, clusters):
         clusters_points = [X[(clusters == i)[:, 0]] for i in range(self.k)]
 
-        if self.metric == "cityblock":
-            return np.array([np.median(clusters_points[i], axis=0)
-                             for i in range(self.k)])
-        else:   # euclidean
-            return np.array([np.mean(clusters_points[i], axis=0)
+        return np.array([np.mean(clusters_points[i], axis=0)
                              for i in range(self.k)])
 
     def SSE(self, X, centroids, clusters):
         SSE_clusters = [np.sum(distance(X[(clusters == i)], centroids[i],
-                                        metric=self.metric, axis=1)**2)
+                                        metric="euclidean",
+                                        axis=1)**2)
                         for i in range(self.k)]
         return np.sum(SSE_clusters)
 
@@ -133,6 +125,7 @@ class KMeans(object):
         old_centroids = np.zeros(centroids.shape)
         clusters = np.zeros((X.shape[0], 1), dtype=int)
         iterations = 0
+        self.dist_calc = 0
 
 #        print(self.algo,"initial_centroids\n", centroids, "\n")
 
@@ -164,6 +157,7 @@ class KMeans(object):
         old_centroids = np.zeros(centroids.shape)
         clusters = np.zeros((X.shape[0], 1), dtype=int)
         iterations = 0
+        self.dist_calc = 0
 
 #        print(self.algo,"initial_centroids\n", centroids, "\n")
 
@@ -173,7 +167,7 @@ class KMeans(object):
         upper = np.full(clusters.shape, np.inf)
         # Assign x to closest centroid
         centroid_dist = cdist(centroids, centroids)
-        self.dist_calc += centroids.shape[0] ** 2
+#        self.dist_calc += centroids.shape[0] ** 2
 
         for i in range(X.shape[0]):
             # Assign to the random centroid
@@ -206,13 +200,14 @@ class KMeans(object):
 #                     np.argmin(cdist(X, centroids, self.metric), axis=1)))
 #         print()
 # =============================================================================
-
+        temp_dist_calc = self.dist_calc
         # #### Main Loop ##########
         while not self.stopping_cond(iterations, old_centroids, centroids):
 
             # Step 1
             centroid_dist = cdist(centroids, centroids, self.metric)
-            self.dist_calc += centroids.shape[0] ** 2
+#            self.dist_calc += centroids.shape[0] ** 2
+
 #            centroid_dist_nan = np.copy(centroid_dist)
 #            np.fill_diagonal(centroid_dist_nan, np.nan)
 #            s_c = np.nanmin(centroid_dist_nan, axis=0) / 2
@@ -263,11 +258,14 @@ class KMeans(object):
                 upper[step3_idx_3] = lower[step3_idx_3, c].reshape(
                                                     step3_idx_3.shape[0], 1)
 
+            if iterations == 0:
+                self.dist_calc = temp_dist_calc
+
             # Step 4
             new_centroids = self.recompute_centroids(X, clusters)
             newcentroid_dist = distance(new_centroids, centroids, self.metric,
                                         axis=1)
-            self.dist_calc += self.k
+#            self.dist_calc += self.k
 
             # Step 5
             for c in range(self.k):
@@ -286,7 +284,6 @@ class KMeans(object):
             centroids = new_centroids
 
             iterations += 1
-
 # ========== Debug Statements  ================================================
 #             print(self.algo,"iterations", iterations)
 #             print(self.algo,"centroids\n", centroids)
@@ -341,7 +338,7 @@ class KMeans(object):
         correct_predict = sum(clf_cnt.groupby(["Predict"],
                                               sort=False)["count"].max())
 
-        print("Accuracy =", round(100*correct_predict/X.shape[0], 2), "%")
+        print("Accuracy =", round(100*correct_predict/len(labels), 2), "%")
 
 
 def check_models(model1, model2):
@@ -351,24 +348,26 @@ def check_models(model1, model2):
         raise ValueError("Find the bug")
 
 
+def lloyd_vs_elkan(lloyd, elkan):
+    speedup = lloyd.dist_calc/elkan.dist_calc
+    print("\nk =", elkan.k)
+    print("iterations\t", elkan.iterations)
+    print("standard  \t", lloyd.dist_calc)
+    print("fast      \t", elkan.dist_calc)
+    print("speedup   \t", round(speedup, 2))
+
+
 if __name__ == '__main__':
-    X = load_data("birch.txt", False)
-    n_clusters = 20
+    X, labels = load_data("iris.csv", True)
+    n_clusters = 3
     init = "kmeans++"
+
     lloyd_kmeans = KMeans(k=n_clusters, algo="lloyd", init=init)
     lloyd_kmeans.fit(X)
 
     elkan_kmeans = KMeans(k=n_clusters, algo="elkan", init=init)
     elkan_kmeans.fit(X)
 
-#    print("Predicted\n", elkan_kmeans.labels_)
-#    print("Class\n", labels)
-#    elkan_kmeans.score(labels)
-    speedup = lloyd_kmeans.dist_calc/elkan_kmeans.dist_calc
+    lloyd_kmeans.score(labels)
 
-    print("\nk =", n_clusters)
-    print("iterations\t", elkan_kmeans.iterations)
-    print("standard  \t", lloyd_kmeans.dist_calc)
-    print("fast      \t", elkan_kmeans.dist_calc)
-    print("speedup   \t", round(speedup, 2))
-    check_models(elkan_kmeans, lloyd_kmeans)  # remove this
+    lloyd_vs_elkan(lloyd_kmeans, elkan_kmeans)
