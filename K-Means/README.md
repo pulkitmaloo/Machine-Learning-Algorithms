@@ -30,8 +30,8 @@ After running the algorithm to form clusters, the following parameters can also 
 * **KMeans.intertia_**: To get the Sum of Squared Errors
 * **KMeans.time**: To get the time taken to run the algorithm
 ___
+K-Means algorithm on the Iris dataset
 ```
-Sample run of the algorithm on the Iris dataset
 KMeans(K=3, algo=lloyd, metric=euclidean, max_iter=50, init=kmeans++, random_state=614)
 Initial centroids chosen
 Finding clusters... 3 clusters found
