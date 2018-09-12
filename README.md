@@ -6,3 +6,4 @@ My implementation of Machine Learning Algorithms
 * Decision Tree
 * K-Means
 * K-Nearest Neighbour
+* Apriori
